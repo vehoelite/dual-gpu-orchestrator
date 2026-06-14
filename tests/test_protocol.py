@@ -46,6 +46,19 @@ def test_parse_tolerates_surrounding_whitespace():
     assert action.body == ""
 
 
+def test_parse_action_value_with_colon():
+    text = "::action fetch\nurl: http://example.com:8080/path\n::end\n"
+    action = parse_action(text)
+    assert action.args == {"url": "http://example.com:8080/path"}
+
+
+def test_parse_normalizes_crlf_body():
+    text = "::action write_file\r\npath: x.txt\r\n---\r\nHello\r\nworld\r\n::end\r\n"
+    action = parse_action(text)
+    assert action.args == {"path": "x.txt"}
+    assert action.body == "Hello\nworld"
+
+
 def test_missing_end_raises_protocol_error():
     text = "::action read_file\npath: notes.md\n"
     with pytest.raises(ProtocolError):

@@ -39,6 +39,7 @@ def parse_action(text: str) -> Action | None:
     just talking). Raises ``ProtocolError`` if a marker is present but the block
     cannot be parsed (e.g. missing ``::end`` or missing verb).
     """
+    text = text.replace("\r\n", "\n")
     if "::action" not in text:
         return None
 
