@@ -11,9 +11,12 @@ import httpx
 from orchestrator.plan import parse_checklist
 
 _PLANNER_SYSTEM = (
-    "You are a planning assistant. Break the user's goal into a short, ordered "
+    "You are a planning assistant. Break the user's goal into a SHORT, ordered "
     "checklist of concrete, self-contained steps a developer agent can execute "
-    "one at a time. Output ONLY the checklist, one step per line, like:\n"
+    "one at a time. Prefer FEW coarse steps over many tiny ones: combine "
+    "producing content with writing it into a single step, and do NOT add "
+    "separate steps just to verify, re-read, or display a file. Output ONLY the "
+    "checklist, one step per line, like:\n"
     "1. first step\n2. second step\nNo preamble, no commentary."
 )
 
