@@ -2,16 +2,19 @@
 
 Usage:
     python -m orchestrator.cli "<goal>" <project_folder>
+        [--dominant <id-or-substring>] [--worker <id-or-substring>]
 
-Picks dominant/worker from LM Studio's loaded models (first two). Planner is
+Without --dominant/--worker, roles are assigned by LM Studio's load order
+(first = dominant, second = worker), which is arbitrary. Pin them explicitly so
+the stronger model orchestrates, e.g. --dominant 9b --worker 4b. Planner is
 chosen by Config.planner; the Gemini key is read from GEMINI_API_KEY (never
 committed). Runs to completion with no human input.
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
-import sys
 from pathlib import Path
 
 from orchestrator.agent import Agent
@@ -21,6 +24,30 @@ from orchestrator.orchestrator import Orchestrator, WORKER_PROMPT
 from orchestrator.planner import GeminiPlanner, LocalPlanner
 from orchestrator.sandbox import Sandbox
 from orchestrator.tools import ToolRegistry
+
+
+def _select_models(
+    models: list[str], dominant: str | None = None, worker: str | None = None
+) -> tuple[str, str]:
+    """Resolve dominant/worker model ids from the loaded models.
+
+    A hint matches the first model whose id contains it (case-insensitive). With
+    no hint, the dominant defaults to the first model and the worker to the
+    second (or the first if only one is loaded). Raises ValueError if a hint
+    matches nothing."""
+
+    def pick(hint: str | None, default: str) -> str:
+        if not hint:
+            return default
+        for model in models:
+            if hint.lower() in model.lower():
+                return model
+        raise ValueError(
+            f"no loaded model matches {hint!r}; available: {', '.join(models)}"
+        )
+
+    second = models[1] if len(models) > 1 else models[0]
+    return pick(dominant, models[0]), pick(worker, second)
 
 
 def _build_planner(cfg: Config, client: LMStudioClient):
@@ -34,12 +61,24 @@ def _build_planner(cfg: Config, client: LMStudioClient):
     return LocalPlanner(client=client, model=cfg.dominant_model)
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="python -m orchestrator.cli")
+    parser.add_argument("goal", help="the goal to accomplish")
+    parser.add_argument("project", help="project folder (the sandbox)")
+    parser.add_argument(
+        "--dominant", default=None,
+        help="model id or substring for the dominant/orchestrator (default: first loaded)",
+    )
+    parser.add_argument(
+        "--worker", default=None,
+        help="model id or substring for the worker (default: second loaded)",
+    )
+    return parser.parse_args()
+
+
 async def main() -> int:
-    if len(sys.argv) < 3:
-        print('usage: python -m orchestrator.cli "<goal>" <project_folder>')
-        return 2
-    goal = sys.argv[1]
-    project = Path(sys.argv[2])
+    args = _parse_args()
+    project = Path(args.project)
     project.mkdir(parents=True, exist_ok=True)
 
     cfg = Config()
@@ -48,9 +87,15 @@ async def main() -> int:
         models = await client.list_models()
         if not models:
             raise SystemExit("no models loaded in LM Studio")
-        cfg.dominant_model = cfg.dominant_model or models[0]
-        cfg.worker_model = cfg.worker_model or (models[1] if len(models) > 1 else models[0])
-        print(f"dominant={cfg.dominant_model} worker={cfg.worker_model}")
+        try:
+            cfg.dominant_model, cfg.worker_model = _select_models(
+                models, args.dominant, args.worker
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        print(f"dominant={cfg.dominant_model}\nworker={cfg.worker_model}")
+        if not args.dominant and not args.worker and len(models) > 1:
+            print("(roles assigned by load order; override with --dominant/--worker)")
 
         def worker_factory() -> Agent:
             return Agent(
@@ -70,7 +115,7 @@ async def main() -> int:
             max_dominant_turns=cfg.max_dominant_turns,
             no_progress_limit=cfg.no_progress_limit,
         )
-        result = await orch.run(goal)
+        result = await orch.run(args.goal)
         print(f"\nStopped: {result.stopped_reason}")
         print(result.plan.render())
     finally:
