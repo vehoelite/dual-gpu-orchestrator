@@ -19,6 +19,34 @@ async def test_list_models_parses_ids():
     assert await client.list_models() == ["model-a", "model-b"]
 
 
+async def test_token_sets_auth_header():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"data": []})
+
+    transport = httpx.MockTransport(handler)
+    http_client = httpx.AsyncClient(transport=transport, base_url="http://test")
+    client = LMStudioClient(base_url="http://test/v1", http_client=http_client, token="sk-lm-test")
+    await client.list_models()
+    assert seen["auth"] == "Bearer sk-lm-test"
+
+
+async def test_no_token_no_auth_header():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"data": []})
+
+    transport = httpx.MockTransport(handler)
+    http_client = httpx.AsyncClient(transport=transport, base_url="http://test")
+    client = LMStudioClient(base_url="http://test/v1", http_client=http_client)
+    await client.list_models()
+    assert seen["auth"] is None
+
+
 async def test_complete_returns_message_content():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/chat/completions")

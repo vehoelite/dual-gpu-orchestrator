@@ -86,7 +86,11 @@ async def main() -> int:
     project.mkdir(parents=True, exist_ok=True)
 
     cfg = Config()
-    client = LMStudioClient(base_url=cfg.lm_studio_url, timeout=cfg.request_timeout)
+    # LM Studio requires this token on ALL endpoints once API auth is enabled.
+    token = os.environ.get("LMSTUDIO_TOKEN", "")
+    client = LMStudioClient(
+        base_url=cfg.lm_studio_url, timeout=cfg.request_timeout, token=token
+    )
     researcher = None
     try:
         models = await client.list_models()
@@ -103,7 +107,6 @@ async def main() -> int:
             print("(roles assigned by load order; override with --dominant/--worker)")
 
         # Phase 3: enable MCP research when a token + mcp.json servers are present.
-        token = os.environ.get("LMSTUDIO_TOKEN", "")
         integrations = mcp_integrations(cfg.resolved_mcp_json())
         worker_prompt = WORKER_PROMPT
         if token and integrations:

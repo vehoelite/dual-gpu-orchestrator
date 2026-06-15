@@ -11,12 +11,15 @@ class LMStudioClient:
         base_url: str = "http://localhost:1234/v1",
         timeout: float = 120.0,
         http_client: httpx.AsyncClient | None = None,
+        token: str = "",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._client = http_client or httpx.AsyncClient(timeout=timeout)
+        # LM Studio requires this on every endpoint once API auth is enabled.
+        self._headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     async def list_models(self) -> list[str]:
-        resp = await self._client.get(f"{self.base_url}/models")
+        resp = await self._client.get(f"{self.base_url}/models", headers=self._headers)
         resp.raise_for_status()
         return [m["id"] for m in resp.json().get("data", [])]
 
@@ -33,7 +36,7 @@ class LMStudioClient:
             "stream": False,
         }
         resp = await self._client.post(
-            f"{self.base_url}/chat/completions", json=payload
+            f"{self.base_url}/chat/completions", json=payload, headers=self._headers
         )
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
