@@ -26,6 +26,13 @@ def test_mcp_integrations_missing_or_bad(tmp_path):
     assert mcp_integrations(bad) == []
 
 
+def test_mcp_integrations_non_dict_json(tmp_path):
+    # Valid JSON that isn't an object must still yield [] (not AttributeError).
+    f = tmp_path / "mcp.json"
+    f.write_text("[]", encoding="utf-8")
+    assert mcp_integrations(f) == []
+
+
 def _researcher(handler) -> McpResearcher:
     transport = httpx.MockTransport(handler)
     client = httpx.AsyncClient(transport=transport)
@@ -75,3 +82,10 @@ async def test_research_http_error_raises():
 
     with pytest.raises(httpx.HTTPStatusError):
         await _researcher(handler).research("q")
+
+
+async def test_research_empty_output_returns_sentinel():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"output": []})
+
+    assert await _researcher(handler).research("q") == "(no result returned)"

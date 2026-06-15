@@ -22,7 +22,7 @@ def mcp_integrations(mcp_json_path) -> list[str]:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
-    servers = data.get("mcpServers", {})
+    servers = data.get("mcpServers", {}) if isinstance(data, dict) else {}
     return [f"mcp/{name}" for name in servers]
 
 
@@ -53,7 +53,12 @@ def _extract_answer(output: list) -> str:
         if isinstance(o, dict) and o.get("type") == "tool_call" and o.get("tool")
     ]
     note = f"[used: {', '.join(tools)}]\n" if tools else ""
-    return (note + text).strip() or json.dumps(output)[:2000]
+    answer = (note + text).strip()
+    if answer:
+        return answer
+    # No extractable message: surface raw output for debugging if there is any,
+    # else say so plainly (rather than a confusing "[]").
+    return json.dumps(output)[:2000] if output else "(no result returned)"
 
 
 class McpResearcher:
