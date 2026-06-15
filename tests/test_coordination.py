@@ -40,6 +40,22 @@ async def test_delegate_runs_fresh_worker_and_marks_in_progress():
     assert coord.worker_results[0]["stopped_reason"] == "done"
 
 
+async def test_delegate_empty_body_is_error_and_plan_unchanged():
+    plan = Plan.from_descriptions(["a"])
+    coord = CoordinationRegistry(plan, worker_factory=lambda: None)
+    status, msg = await coord.execute(Action("delegate", {"step": "0"}, "  "))
+    assert status == "error"
+    assert plan.steps[0].status == "pending"  # not left stuck in_progress
+
+
+async def test_delegate_bad_index_is_error_and_plan_unchanged():
+    plan = Plan.from_descriptions(["a"])
+    coord = CoordinationRegistry(plan, worker_factory=lambda: None)
+    status, msg = await coord.execute(Action("delegate", {"step": "9"}, "do it"))
+    assert status == "error"
+    assert plan.steps[0].status == "pending"
+
+
 async def test_mark_done_updates_plan():
     plan = Plan.from_descriptions(["a"])
     coord = CoordinationRegistry(plan, worker_factory=lambda: None)

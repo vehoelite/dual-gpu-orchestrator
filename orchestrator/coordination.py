@@ -71,14 +71,19 @@ class CoordinationRegistry:
             raise PlanError(f"step must be an integer, got {raw!r}")
 
     async def _delegate(self, action: Action) -> tuple[str, str]:
+        # Validate everything BEFORE mutating the plan, so a failed delegate
+        # never leaves a step stuck in "in_progress".
         try:
             index = self._parse_step(action)
-            self.plan.mark_in_progress(index)
         except PlanError as exc:
             return "error", str(exc)
         subtask = action.body.strip()
         if not subtask:
             return "error", "delegate needs a subtask in the body"
+        try:
+            self.plan.mark_in_progress(index)
+        except PlanError as exc:
+            return "error", str(exc)
         worker = self.worker_factory()
         result = await worker.run(subtask)
         report = _last_assistant(result.transcript)
