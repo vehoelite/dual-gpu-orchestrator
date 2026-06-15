@@ -6,6 +6,7 @@ no-progress backstop: N consecutive actions with no plan-state change return
 ("stop", "no_progress"), which ends the dominant loop."""
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 from orchestrator.plan import Plan, PlanError, parse_checklist
@@ -65,10 +66,11 @@ class CoordinationRegistry:
         raw = action.args.get("step")
         if raw is None:
             raise PlanError("missing 'step' arg")
-        try:
-            return int(raw)
-        except ValueError:
-            raise PlanError(f"step must be an integer, got {raw!r}")
+        # Tolerate sloppy refs like "8 (final)" or "step 2" — take the first int.
+        match = re.search(r"\d+", str(raw))
+        if match is None:
+            raise PlanError(f"step must contain an integer, got {raw!r}")
+        return int(match.group())
 
     async def _delegate(self, action: Action) -> tuple[str, str]:
         # Validate everything BEFORE mutating the plan, so a failed delegate

@@ -104,3 +104,11 @@ async def test_progress_resets_counter():
     await coord.execute(Action("frobnicate", {}, ""))  # no change -> count 1
     await coord.execute(Action("mark_done", {"step": "0"}, ""))  # change -> reset
     assert coord.no_progress_count == 0
+
+
+async def test_step_tolerates_trailing_text(tmp_path):
+    plan = Plan.from_descriptions(["a", "b"])
+    coord = CoordinationRegistry(plan, worker_factory=lambda: None)
+    status, msg = await coord.execute(Action("mark_done", {"step": "1 (final)"}, ""))
+    assert status == "ok"
+    assert plan.steps[1].status == "done"

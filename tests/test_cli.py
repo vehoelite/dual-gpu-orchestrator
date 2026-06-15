@@ -35,3 +35,9 @@ def test_research_hint_has_concrete_example():
     from orchestrator.orchestrator import RESEARCH_HINT
     assert "::action research" in RESEARCH_HINT
     assert "query:" in RESEARCH_HINT
+
+
+def test_dominant_prompt_warns_workers_are_stateless():
+    from orchestrator.orchestrator import DOMINANT_PROMPT
+    assert "NO memory" in DOMINANT_PROMPT
+    assert "copy" in DOMINANT_PROMPT.lower()
