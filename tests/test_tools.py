@@ -17,6 +17,7 @@ def test_write_then_read_file(registry, tmp_path):
         Action(verb="write_file", args={"path": "hello.txt"}, body="hi there")
     )
     assert status == "ok"
+    assert "8 bytes" in message
     assert (tmp_path / "hello.txt").read_text() == "hi there"
 
     status, message = registry.execute(
@@ -24,6 +25,14 @@ def test_write_then_read_file(registry, tmp_path):
     )
     assert status == "ok"
     assert "hi there" in message
+
+
+def test_write_file_creates_intermediate_dirs(registry, tmp_path):
+    status, message = registry.execute(
+        Action(verb="write_file", args={"path": "a/b/c.txt"}, body="nested")
+    )
+    assert status == "ok"
+    assert (tmp_path / "a" / "b" / "c.txt").read_text() == "nested"
 
 
 def test_read_missing_file_is_error(registry):
@@ -69,3 +78,12 @@ def test_sandbox_escape_is_error(registry):
         Action(verb="read_file", args={"path": "../escape.txt"}, body="")
     )
     assert status == "error"
+    assert "escape" in message
+
+
+def test_blank_arg_is_error(registry):
+    status, message = registry.execute(
+        Action(verb="read_file", args={"path": ""}, body="")
+    )
+    assert status == "error"
+    assert "path" in message

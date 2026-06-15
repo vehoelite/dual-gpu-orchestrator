@@ -37,7 +37,7 @@ class ToolRegistry:
 
     def _require_arg(self, action: Action, key: str) -> str:
         value = action.args.get(key)
-        if value is None:
+        if not value:  # catches both a missing key and a blank value
             raise ToolError(f"{action.verb} requires arg '{key}'")
         return value
 
@@ -53,9 +53,12 @@ class ToolRegistry:
     def _write_file(self, action: Action) -> str:
         rel = self._require_arg(action, "path")
         path = self.sandbox.resolve(rel)
-        path.parent.mkdir(parents=True, exist_ok=True)
         data = action.body
-        path.write_text(data, encoding="utf-8")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(data, encoding="utf-8")
+        except OSError as exc:
+            raise ToolError(f"write failed: {exc}")
         return f"wrote {len(data.encode('utf-8'))} bytes to {rel}"
 
     def _list_dir(self, action: Action) -> str:
