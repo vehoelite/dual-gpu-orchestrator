@@ -59,10 +59,69 @@ def test_parse_normalizes_crlf_body():
     assert action.body == "Hello\nworld"
 
 
-def test_missing_end_raises_protocol_error():
+def test_missing_end_is_tolerated():
+    # Weak models often omit ::end; close the block at end-of-text.
     text = "::action read_file\npath: notes.md\n"
-    with pytest.raises(ProtocolError):
-        parse_action(text)
+    action = parse_action(text)
+    assert action == Action(verb="read_file", args={"path": "notes.md"}, body="")
+
+
+def test_stray_separator_and_missing_end():
+    # The exact run_command loop we observed: trailing --- and no ::end.
+    text = '::action run_command\ncmd: echo "hi" > f.txt\n---'
+    action = parse_action(text)
+    assert action.verb == "run_command"
+    assert action.args == {"cmd": 'echo "hi" > f.txt'}  # inner quotes preserved
+    assert action.body == ""
+
+
+def test_key_equals_value():
+    text = "::action write_file\npath=out.txt\n::end"
+    action = parse_action(text)
+    assert action.args == {"path": "out.txt"}
+
+
+def test_inline_args_on_action_line():
+    text = "::action read_file path: notes.md\n::end"
+    action = parse_action(text)
+    assert action.verb == "read_file"
+    assert action.args == {"path": "notes.md"}
+
+
+def test_surrounding_quotes_stripped():
+    text = '::action write_file\npath: "hello.txt"\n::end'
+    action = parse_action(text)
+    assert action.args == {"path": "hello.txt"}
+
+
+def test_reasoning_preamble_anchors_on_last_action():
+    # A reasoning model thinks first (and may mention the format), then acts.
+    text = (
+        "<thinking>I should use the ::action format to write the file.</thinking>\n"
+        "::action write_file\n"
+        "path: out.txt\n"
+        "---\n"
+        "hello\n"
+        "::end"
+    )
+    action = parse_action(text)
+    assert action.verb == "write_file"
+    assert action.args == {"path": "out.txt"}
+    assert action.body == "hello"
+
+
+def test_trailing_prose_does_not_clobber_real_action():
+    # Model emits a valid action, then explains it using the keyword in prose.
+    # Only line-starting markers count, so the real action wins.
+    text = (
+        "::action run_command\n"
+        "cmd: ls\n"
+        "::end\n"
+        "I invoked ::action to execute the listing.\n"
+    )
+    action = parse_action(text)
+    assert action.verb == "run_command"
+    assert action.args == {"cmd": "ls"}
 
 
 def test_missing_verb_raises_protocol_error():

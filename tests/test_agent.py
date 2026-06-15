@@ -59,7 +59,7 @@ async def test_no_action_stops(tmp_path):
 
 async def test_malformed_action_gets_corrective_reprompt(tmp_path):
     scripted = [
-        "::action write_file\npath: a.txt\n",  # missing ::end -> ProtocolError
+        "::action\n::end",  # no verb -> ProtocolError (the one hard failure)
         "::action done\n::end",
     ]
     agent = _agent(tmp_path, scripted)
@@ -81,7 +81,7 @@ async def test_max_steps_stops(tmp_path):
 async def test_repeated_malformed_hits_max_steps(tmp_path):
     # A model that always emits malformed blocks must trip the backstop, not
     # raise — each bad reply consumes a step.
-    malformed = "::action write_file\npath: a.txt\n"  # missing ::end
+    malformed = "::action\n::end"  # no verb -> the one hard parse failure
     agent = _agent(tmp_path, [malformed] * 5, max_steps=3)
     result = await agent.run("task")
     assert result.stopped_reason == "max_steps"
