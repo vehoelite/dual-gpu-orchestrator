@@ -75,6 +75,8 @@ class Orchestrator:
         )
         task = f"Goal: {goal}\n\n{plan.render()}"
         result = await dominant.run(task)
+        # Only the turn cap is renamed; "no_progress", "task_complete", and
+        # "no_action" (dominant emitted no parseable action) pass through.
         reason = "max_turns" if result.stopped_reason == "max_steps" else result.stopped_reason
         return RunResult(
             plan=plan,

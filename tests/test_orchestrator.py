@@ -83,6 +83,9 @@ async def test_max_turns_backstop():
     result = await orch.run("x")
     assert result.stopped_reason == "max_turns"
     assert len(dom.calls) == 2
+    # partial state survives a backstop exit
+    assert len(result.worker_results) == 2
+    assert result.plan.steps[0].status == "in_progress"
 
 
 async def test_no_progress_backstop():
