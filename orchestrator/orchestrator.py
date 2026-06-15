@@ -73,6 +73,14 @@ WORKER_PROMPT = (
     "::end"
 )
 
+RESEARCH_HINT = (
+    "\n\nYou also have web/tool research via MCP. Use it for facts you don't know:\n"
+    "::action research\n"
+    "query: latest NVIDIA data-center news with sources\n"
+    "::end\n"
+    "The result is a synthesized answer from external tools."
+)
+
 
 @dataclass
 class RunResult:

@@ -25,6 +25,10 @@ class Config:
     no_progress_limit: int = 5
     dominant_model: str = ""
     worker_model: str = ""
+    # Phase 3: MCP research
+    lmstudio_native_url: str = "http://localhost:1234"
+    research_model: str = ""
+    research_timeout: float = 180.0
 
     def __post_init__(self) -> None:
         if not self.mcp_json_path:

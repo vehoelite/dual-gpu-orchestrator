@@ -18,9 +18,12 @@ import os
 from pathlib import Path
 
 from orchestrator.agent import Agent
+from orchestrator.composite_registry import CompositeRegistry
 from orchestrator.config import Config
+from orchestrator.env import load_dotenv
 from orchestrator.llm_client import LMStudioClient
-from orchestrator.orchestrator import Orchestrator, WORKER_PROMPT
+from orchestrator.mcp_research import McpResearcher, mcp_integrations
+from orchestrator.orchestrator import RESEARCH_HINT, Orchestrator, WORKER_PROMPT
 from orchestrator.planner import GeminiPlanner, LocalPlanner
 from orchestrator.sandbox import Sandbox
 from orchestrator.tools import ToolRegistry
@@ -77,12 +80,14 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def main() -> int:
+    load_dotenv()  # populate os.environ from .env (real env wins)
     args = _parse_args()
     project = Path(args.project)
     project.mkdir(parents=True, exist_ok=True)
 
     cfg = Config()
     client = LMStudioClient(base_url=cfg.lm_studio_url, timeout=cfg.request_timeout)
+    researcher = None
     try:
         models = await client.list_models()
         if not models:
@@ -97,12 +102,35 @@ async def main() -> int:
         if not args.dominant and not args.worker and len(models) > 1:
             print("(roles assigned by load order; override with --dominant/--worker)")
 
+        # Phase 3: enable MCP research when a token + mcp.json servers are present.
+        token = os.environ.get("LMSTUDIO_TOKEN", "")
+        integrations = mcp_integrations(cfg.resolved_mcp_json())
+        worker_prompt = WORKER_PROMPT
+        if token and integrations:
+            researcher = McpResearcher(
+                base_url=cfg.lmstudio_native_url,
+                token=token,
+                model=cfg.research_model or cfg.worker_model,
+                integrations=integrations,
+                timeout=cfg.research_timeout,
+            )
+            worker_prompt = WORKER_PROMPT + RESEARCH_HINT
+            print(f"research enabled via {integrations}")
+        else:
+            print("research disabled (set LMSTUDIO_TOKEN and configure mcp.json to enable)")
+
         def worker_factory() -> Agent:
+            tool_registry = ToolRegistry(Sandbox(project), cfg.command_timeout)
+            registry = (
+                CompositeRegistry(tool_registry, researcher)
+                if researcher is not None
+                else tool_registry
+            )
             return Agent(
                 client=client,
-                registry=ToolRegistry(Sandbox(project), cfg.command_timeout),
+                registry=registry,
                 model=cfg.worker_model,
-                system_prompt=WORKER_PROMPT,
+                system_prompt=worker_prompt,
                 max_steps=cfg.max_steps,
             )
 
@@ -120,6 +148,8 @@ async def main() -> int:
         print(result.plan.render())
     finally:
         await client.aclose()
+        if researcher is not None:
+            await researcher.aclose()
     return 0
 
 
