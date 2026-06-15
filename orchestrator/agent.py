@@ -9,10 +9,7 @@ from orchestrator.protocol import ProtocolError, parse_action, serialize_result
 
 _FORMAT_REMINDER = (
     "Could not parse an action. Emit exactly one action block:\n"
-    "::action <verb>\nkey: value\n---\noptional body\n::end\n"
-    # The trailing ``\\n`` is intentional: it renders as a literal "\n" so the
-    # model sees that ``done`` and ``::end`` may share a line.
-    "When the task is finished, emit ::action done\\n::end."
+    "::action <verb>\nkey: value\n---\noptional body\n::end"
 )
 
 
@@ -38,6 +35,13 @@ class Agent:
         self.system_prompt = system_prompt
         self.max_steps = max_steps
         self.terminal_verbs = terminal_verbs or {"done"}
+        # Corrective reminder names THIS agent's terminal verb(s), so the dominant
+        # (task_complete) is not wrongly told to emit the worker's "done".
+        _verbs = " or ".join(sorted(self.terminal_verbs))
+        self._reminder = (
+            f"{_FORMAT_REMINDER}\nWhen the task is finished, emit a terminal "
+            f"action ({_verbs})."
+        )
 
     async def run(self, task: str) -> AgentResult:
         # NOTE: exceptions from ``client.complete`` (LM Studio unreachable,
@@ -61,7 +65,7 @@ class Agent:
                     {
                         "role": "user",
                         "content": serialize_result(
-                            "error", f"{exc}\n\n{_FORMAT_REMINDER}"
+                            "error", f"{exc}\n\n{self._reminder}"
                         ),
                     }
                 )

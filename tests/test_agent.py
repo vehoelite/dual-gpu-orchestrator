@@ -135,3 +135,22 @@ async def test_stop_status_ends_run(tmp_path):
     result = await agent.run("go")
     assert result.stopped_reason == "no_progress"
     assert len(agent.client.calls) == 1
+
+
+async def test_corrective_reminder_names_terminal_verb(tmp_path):
+    # A malformed reply from a dominant-style agent should be told to emit its
+    # own terminal verb (task_complete), not the worker's "done".
+    reg = AsyncEchoRegistry()
+    client = FakeClient([
+        "::action write_file\npath: a.txt\n",  # malformed (no ::end)
+        "::action task_complete\n::end",
+    ])
+    agent = Agent(
+        client=client, registry=reg, model="m", system_prompt="s",
+        max_steps=5, terminal_verbs={"task_complete"},
+    )
+    result = await agent.run("go")
+    assert result.stopped_reason == "task_complete"
+    reminder = agent.client.calls[1][-1]["content"]
+    assert "task_complete" in reminder
+    assert "done" not in reminder
