@@ -22,3 +22,10 @@ def test_phase2_defaults():
     assert cfg.max_dominant_turns > 0
     assert cfg.no_progress_limit > 0
     assert cfg.gemini_model
+
+
+def test_phase3_defaults():
+    cfg = Config()
+    assert cfg.lmstudio_native_url == "http://localhost:1234"
+    assert cfg.research_model == ""
+    assert cfg.research_timeout > 0
