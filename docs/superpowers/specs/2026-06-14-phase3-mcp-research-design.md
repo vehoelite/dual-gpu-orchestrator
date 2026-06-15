@@ -38,7 +38,11 @@ thin client to that endpoint rather than reimplementing MCP.
   change.
 - Keep the worker on the proven `::action` text protocol — no native
   tool-calling mixed into our loop.
-- Secrets (the LM Studio API token) come from the environment, never committed.
+- Secrets (the LM Studio API token, the Gemini key) come from the environment,
+  never committed.
+- **Friendly secret setup**: a gitignored `.env` file (with a committed
+  `.env.example`) so less-experienced users don't have to set OS environment
+  variables by hand.
 
 **Non-Goals**
 - No per-tool granular verbs (one `research` verb covers all configured tools).
@@ -89,6 +93,13 @@ New components (each small, single-purpose, independently testable):
   that reads `Config.mcp_json_path`, parses the `mcpServers` object, and returns
   `["mcp/<id>" for id in servers]`. Missing file or no servers → empty list.
 
+- **`env.py`** — a tiny, dependency-free dotenv loader.
+  `load_dotenv(path=".env") -> dict[str, str]`: if the file exists, parse
+  `KEY=VALUE` lines (skip blanks and `#` comments, strip surrounding quotes),
+  and `os.environ.setdefault(KEY, VALUE)` so **real environment variables always
+  take precedence** over `.env`. Returns the keys it loaded. Called once at the
+  start of `cli.py`, before any token is read.
+
 ## 4. Control flow (a research call)
 
 1. Worker emits `::action research` / `query: <text>` / `::end`.
@@ -111,6 +122,17 @@ Extend `Config` (backward-compatible):
 The **LM Studio API token** is read from the `LMSTUDIO_TOKEN` environment
 variable at runtime (in `cli.py`), never stored in `Config` or committed —
 mirroring the `GEMINI_API_KEY` handling.
+
+**`.env` support:** `cli.py` calls `load_dotenv()` at startup, which populates
+`os.environ` from a `.env` file in the working directory (without overriding
+existing real env vars). So both `LMSTUDIO_TOKEN` and `GEMINI_API_KEY` can live
+in `.env`. `.env` is added to `.gitignore`; a committed `.env.example` documents
+the keys with empty values:
+```
+# Copy to .env and fill in your values. .env is gitignored — never commit secrets.
+GEMINI_API_KEY=
+LMSTUDIO_TOKEN=
+```
 
 **Enablement:** research is wired into the worker only when a token is present
 **and** `mcp.json` enumerates ≥1 server. Otherwise the worker is built with the
@@ -145,6 +167,9 @@ query: latest NVIDIA data-center news with sources
   verb → error; researcher exception → `("error", …)`.
 - **mcp.json enumeration**: a sample config with one and with multiple servers →
   correct `["mcp/<id>", …]`; missing file → `[]`.
+- **`env.py`**: a tmp_path `.env` with comments/quotes/blank lines parses
+  correctly; a pre-existing `os.environ` value is NOT overridden; a missing file
+  is a no-op.
 - **Optional live smoke** (excluded from the unit suite): real LM Studio +
   `LMSTUDIO_TOKEN` + Exa on a trivial query.
 
@@ -154,10 +179,12 @@ query: latest NVIDIA data-center news with sources
 native call is plain `httpx` (no LM Studio SDK dependency).
 
 **Build order (single plan):**
-1. `mcp_research.py` (researcher + mcp.json enumeration).
-2. `composite_registry.py`.
-3. `config.py` additions.
-4. Wire into `cli.py` worker_factory + conditional `WORKER_PROMPT` research line.
+1. `env.py` (dotenv loader) + `.gitignore`/`.env.example`.
+2. `mcp_research.py` (researcher + mcp.json enumeration).
+3. `composite_registry.py`.
+4. `config.py` additions.
+5. Wire into `cli.py`: `load_dotenv()` at startup, build researcher when enabled,
+   compose the worker registry, conditional `WORKER_PROMPT` research line.
 
 ## 9. Risks
 
