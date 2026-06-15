@@ -91,3 +91,47 @@ async def test_repeated_malformed_hits_max_steps(tmp_path):
         for m in result.transcript
         if m["role"] == "user"
     )
+
+
+class AsyncEchoRegistry:
+    """Async registry: records actions, returns ok; 'halt' returns a stop."""
+
+    def __init__(self):
+        self.executed = []
+
+    async def execute(self, action):
+        self.executed.append(action)
+        if action.verb == "halt":
+            return ("stop", "no_progress")
+        return ("ok", f"did {action.verb}")
+
+
+async def test_terminal_verb_configurable(tmp_path):
+    reg = AsyncEchoRegistry()
+    client = FakeClient(["::action task_complete\n::end"])
+    agent = Agent(
+        client=client, registry=reg, model="m", system_prompt="s",
+        max_steps=5, terminal_verbs={"task_complete"},
+    )
+    result = await agent.run("go")
+    assert result.stopped_reason == "task_complete"
+    assert reg.executed == []  # terminal verb is not executed by the registry
+
+
+async def test_async_registry_is_awaited(tmp_path):
+    reg = AsyncEchoRegistry()
+    client = FakeClient(["::action foo\n::end", "::action done\n::end"])
+    agent = Agent(client=client, registry=reg, model="m", system_prompt="s", max_steps=5)
+    result = await agent.run("go")
+    assert result.stopped_reason == "done"
+    assert [a.verb for a in reg.executed] == ["foo"]
+    assert any("::result ok" in m["content"] for m in agent.client.calls[1])
+
+
+async def test_stop_status_ends_run(tmp_path):
+    reg = AsyncEchoRegistry()
+    client = FakeClient(["::action halt\n::end", "::action done\n::end"])
+    agent = Agent(client=client, registry=reg, model="m", system_prompt="s", max_steps=5)
+    result = await agent.run("go")
+    assert result.stopped_reason == "no_progress"
+    assert len(agent.client.calls) == 1

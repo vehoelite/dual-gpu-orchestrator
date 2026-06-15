@@ -2,10 +2,10 @@
 feed result back, until 'done', no action, or the step cap."""
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 
 from orchestrator.protocol import ProtocolError, parse_action, serialize_result
-from orchestrator.tools import ToolRegistry
 
 _FORMAT_REMINDER = (
     "Could not parse an action. Emit exactly one action block:\n"
@@ -26,16 +26,18 @@ class Agent:
     def __init__(
         self,
         client,
-        registry: ToolRegistry,
+        registry,  # any object with execute(action) -> (status, message)
         model: str,
         system_prompt: str,
         max_steps: int = 50,
+        terminal_verbs: set[str] | None = None,
     ) -> None:
         self.client = client
         self.registry = registry
         self.model = model
         self.system_prompt = system_prompt
         self.max_steps = max_steps
+        self.terminal_verbs = terminal_verbs or {"done"}
 
     async def run(self, task: str) -> AgentResult:
         # NOTE: exceptions from ``client.complete`` (LM Studio unreachable,
@@ -68,11 +70,17 @@ class Agent:
             if action is None:
                 reason = "no_action"
                 break
-            if action.verb == "done":
-                reason = "done"
+            if action.verb in self.terminal_verbs:
+                reason = action.verb
                 break
 
-            status, message = self.registry.execute(action)
+            result = self.registry.execute(action)
+            if inspect.isawaitable(result):
+                result = await result
+            status, message = result
+            if status == "stop":
+                reason = message
+                break
             messages.append(
                 {"role": "user", "content": serialize_result(status, message)}
             )
