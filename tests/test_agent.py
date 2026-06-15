@@ -76,3 +76,18 @@ async def test_max_steps_stops(tmp_path):
     result = await agent.run("task")
     assert result.stopped_reason == "max_steps"
     assert len(agent.client.calls) == 3
+
+
+async def test_repeated_malformed_hits_max_steps(tmp_path):
+    # A model that always emits malformed blocks must trip the backstop, not
+    # raise — each bad reply consumes a step.
+    malformed = "::action write_file\npath: a.txt\n"  # missing ::end
+    agent = _agent(tmp_path, [malformed] * 5, max_steps=3)
+    result = await agent.run("task")
+    assert result.stopped_reason == "max_steps"
+    assert len(agent.client.calls) == 3
+    assert any(
+        "::result error" in m["content"]
+        for m in result.transcript
+        if m["role"] == "user"
+    )

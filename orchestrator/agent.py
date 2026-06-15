@@ -10,6 +10,8 @@ from orchestrator.tools import ToolRegistry
 _FORMAT_REMINDER = (
     "Could not parse an action. Emit exactly one action block:\n"
     "::action <verb>\nkey: value\n---\noptional body\n::end\n"
+    # The trailing ``\\n`` is intentional: it renders as a literal "\n" so the
+    # model sees that ``done`` and ``::end`` may share a line.
     "When the task is finished, emit ::action done\\n::end."
 )
 
@@ -36,6 +38,9 @@ class Agent:
         self.max_steps = max_steps
 
     async def run(self, task: str) -> AgentResult:
+        # NOTE: exceptions from ``client.complete`` (LM Studio unreachable,
+        # timeouts) propagate by design — per spec section 7 those are handled
+        # at the run-start / orchestrator layer, not inside this loop.
         messages: list[dict] = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": task},
@@ -48,6 +53,8 @@ class Agent:
             try:
                 action = parse_action(reply)
             except ProtocolError as exc:
+                # A malformed reply consumes a step by design: repeated bad
+                # output eventually trips the max_steps backstop.
                 messages.append(
                     {
                         "role": "user",
