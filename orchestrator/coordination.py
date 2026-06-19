@@ -11,6 +11,7 @@ from typing import Callable
 
 from orchestrator.plan import Plan, PlanError, parse_checklist
 from orchestrator.protocol import Action
+from orchestrator.events import NullSink, make_event, plan_event, preview
 
 
 def _last_assistant(transcript: list[dict]) -> str:
@@ -26,12 +27,14 @@ class CoordinationRegistry:
         plan: Plan,
         worker_factory: Callable[[], object],
         no_progress_limit: int = 5,
+        sink=None,
     ) -> None:
         self.plan = plan
         self.worker_factory = worker_factory
         self.no_progress_limit = no_progress_limit
         self.no_progress_count = 0
         self.worker_results: list[dict] = []
+        self.sink = sink or NullSink()
 
     async def execute(self, action: Action) -> tuple[str, str]:
         before = self.plan.signature()
@@ -40,7 +43,9 @@ class CoordinationRegistry:
             self.no_progress_count += 1
         else:
             self.no_progress_count = 0
+            self.sink.emit(plan_event(self.plan))
         if self.no_progress_count >= self.no_progress_limit:
+            self.sink.emit(make_event("no_progress"))
             return "stop", "no_progress"
         return status, message
 
@@ -86,8 +91,14 @@ class CoordinationRegistry:
             self.plan.mark_in_progress(index)
         except PlanError as exc:
             return "error", str(exc)
+        self.sink.emit(make_event(
+            "worker_started", step=index, subtask=preview(subtask)
+        ))
         worker = self.worker_factory()
         result = await worker.run(subtask)
+        self.sink.emit(make_event(
+            "worker_finished", step=index, stopped_reason=result.stopped_reason
+        ))
         report = _last_assistant(result.transcript)
         self.worker_results.append(
             {

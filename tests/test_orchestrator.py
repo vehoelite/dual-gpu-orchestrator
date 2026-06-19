@@ -103,3 +103,58 @@ async def test_no_progress_backstop():
     )
     result = await orch.run("x")
     assert result.stopped_reason == "no_progress"
+
+
+from orchestrator.agent import Agent
+from orchestrator.sandbox import Sandbox
+from orchestrator.tools import ToolRegistry
+
+
+class RecordingSink:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event):
+        self.events.append(event)
+
+
+async def test_orchestrator_emits_full_event_stream(tmp_path):
+    sink = RecordingSink()
+    planner = StubPlanner(["create out.txt"])
+    dom = FakeDominantClient([
+        "::action delegate\nstep: 0\n---\nwrite out.txt with hi\n::end",
+        "::action mark_done\nstep: 0\n::end",
+        "::action task_complete\n::end",
+    ])
+
+    def worker_factory():
+        return Agent(
+            client=FakeDominantClient([
+                "::action write_file\npath: out.txt\n---\nhi\n::end",
+                "::action done\n::end",
+            ]),
+            registry=ToolRegistry(Sandbox(tmp_path), command_timeout=10.0),
+            model="w", system_prompt="s", max_steps=5,
+            sink=sink, agent_label="worker",
+        )
+
+    orch = Orchestrator(
+        planner=planner, worker_factory=worker_factory,
+        dominant_client=dom, dominant_model="dom", sink=sink,
+    )
+    result = await orch.run("build it")
+    assert result.stopped_reason == "task_complete"
+
+    types = [e["type"] for e in sink.events]
+    assert types[0] == "plan"  # seed plan emitted first
+    assert "worker_started" in types and "worker_finished" in types
+    assert types.index("worker_started") < types.index("worker_finished")
+    assert any(
+        e["type"] == "message" and e["agent"] == "worker" for e in sink.events
+    )
+    assert any(
+        e["type"] == "action" and e["agent"] == "dominant" and e["verb"] == "delegate"
+        for e in sink.events
+    )
+    assert any(e["type"] == "action" and e["verb"] == "task_complete" for e in sink.events)
+    assert (tmp_path / "out.txt").read_text() == "hi"

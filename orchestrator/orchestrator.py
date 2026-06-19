@@ -10,6 +10,7 @@ from typing import Callable
 from orchestrator.agent import Agent
 from orchestrator.coordination import CoordinationRegistry
 from orchestrator.plan import Plan
+from orchestrator.events import NullSink, plan_event
 
 DOMINANT_PROMPT = (
     "You are the DOMINANT orchestrator. You do NOT do work yourself and you "
@@ -116,6 +117,7 @@ class Orchestrator:
         dominant_model: str,
         max_dominant_turns: int = 40,
         no_progress_limit: int = 5,
+        sink=None,
     ) -> None:
         self.planner = planner
         self.worker_factory = worker_factory
@@ -123,14 +125,17 @@ class Orchestrator:
         self.dominant_model = dominant_model
         self.max_dominant_turns = max_dominant_turns
         self.no_progress_limit = no_progress_limit
+        self.sink = sink or NullSink()
 
     async def run(self, goal: str) -> RunResult:
         steps = await self._plan(goal)
         if steps is None:
             return RunResult(Plan(), [], [], "planner_failed")
         plan = Plan.from_descriptions(steps)
+        self.sink.emit(plan_event(plan))
         coord = CoordinationRegistry(
-            plan, self.worker_factory, no_progress_limit=self.no_progress_limit
+            plan, self.worker_factory,
+            no_progress_limit=self.no_progress_limit, sink=self.sink,
         )
         dominant = Agent(
             client=self.dominant_client,
@@ -139,6 +144,8 @@ class Orchestrator:
             system_prompt=DOMINANT_PROMPT,
             max_steps=self.max_dominant_turns,
             terminal_verbs={"task_complete"},
+            sink=self.sink,
+            agent_label="dominant",
         )
         task = f"Goal: {goal}\n\n{plan.render()}"
         result = await dominant.run(task)

@@ -112,3 +112,41 @@ async def test_step_tolerates_trailing_text(tmp_path):
     status, msg = await coord.execute(Action("mark_done", {"step": "1 (final)"}, ""))
     assert status == "ok"
     assert plan.steps[1].status == "done"
+
+
+from orchestrator.agent import AgentResult
+from orchestrator.coordination import CoordinationRegistry
+from orchestrator.plan import Plan
+from orchestrator.protocol import Action
+
+
+class _RecordingSink:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event):
+        self.events.append(event)
+
+
+class _FakeWorker:
+    async def run(self, task):
+        return AgentResult(
+            transcript=[{"role": "assistant", "content": "did it"}],
+            stopped_reason="done",
+        )
+
+
+async def test_coordination_emits_worker_and_plan_events():
+    sink = _RecordingSink()
+    plan = Plan.from_descriptions(["do a thing"])
+    coord = CoordinationRegistry(
+        plan, worker_factory=lambda: _FakeWorker(), sink=sink
+    )
+    await coord.execute(Action("delegate", {"step": "0"}, "go do it"))
+    types = [e["type"] for e in sink.events]
+    assert "worker_started" in types
+    assert "worker_finished" in types
+    assert "plan" in types
+    assert types.index("worker_started") < types.index("worker_finished")
+    started = next(e for e in sink.events if e["type"] == "worker_started")
+    assert started["step"] == 0
