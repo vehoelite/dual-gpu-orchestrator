@@ -232,7 +232,15 @@ class EventBus:
         return list(self._buffer)
 
     def reset(self) -> None:
+        # A new run starts everyone from a clean slate: clear the replay buffer
+        # AND drain any stale prior-run events still sitting in subscriber queues.
         self._buffer.clear()
+        for q in self._subscribers:
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
