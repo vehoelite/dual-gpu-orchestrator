@@ -29,6 +29,9 @@ class Config:
     lmstudio_native_url: str = "http://localhost:1234"
     research_model: str = ""
     research_timeout: float = 180.0
+    # Phase 4: web server
+    host: str = "127.0.0.1"
+    port: int = 8000
 
     def __post_init__(self) -> None:
         if not self.mcp_json_path:

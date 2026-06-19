@@ -29,3 +29,9 @@ def test_phase3_defaults():
     assert cfg.lmstudio_native_url == "http://localhost:1234"
     assert cfg.research_model == ""
     assert cfg.research_timeout > 0
+
+
+def test_server_host_port_defaults():
+    cfg = Config()
+    assert cfg.host == "127.0.0.1"
+    assert cfg.port == 8000
