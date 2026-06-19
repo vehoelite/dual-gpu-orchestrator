@@ -154,3 +154,42 @@ async def test_corrective_reminder_names_terminal_verb(tmp_path):
     reminder = agent.client.calls[1][-1]["content"]
     assert "task_complete" in reminder
     assert "done" not in reminder
+
+
+class RecordingSink:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event):
+        self.events.append(event)
+
+
+async def test_agent_emits_event_sequence(tmp_path):
+    sink = RecordingSink()
+    registry = ToolRegistry(sandbox=Sandbox(tmp_path), command_timeout=10.0)
+    agent = Agent(
+        client=FakeClient([
+            "::action write_file\npath: a.txt\n---\nhi\n::end",
+            "::action done\n::end",
+        ]),
+        registry=registry, model="m", system_prompt="s", max_steps=5,
+        sink=sink, agent_label="worker",
+    )
+    await agent.run("t")
+    assert [e["type"] for e in sink.events] == [
+        "message", "action", "result", "message", "action",
+    ]
+    assert sink.events[1]["verb"] == "write_file"
+    assert sink.events[1]["agent"] == "worker"
+    assert sink.events[2]["status"] == "ok"
+
+
+async def test_agent_emits_parse_error(tmp_path):
+    sink = RecordingSink()
+    registry = ToolRegistry(sandbox=Sandbox(tmp_path), command_timeout=10.0)
+    agent = Agent(
+        client=FakeClient(["::action\n::end", "::action done\n::end"]),
+        registry=registry, model="m", system_prompt="s", max_steps=5, sink=sink,
+    )
+    await agent.run("t")
+    assert any(e["type"] == "parse_error" for e in sink.events)
