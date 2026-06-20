@@ -1,1 +1,42 @@
-<!doctype html><title>orchestrator</title><p>placeholder</p>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dual-GPU Orchestrator</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Dual-GPU Orchestrator</h1>
+    <span id="status" class="status idle">idle</span>
+  </header>
+
+  <section id="config">
+    <div class="row">
+      <label>Dominant <select id="dominant"></select></label>
+      <label>Worker <select id="worker"></select></label>
+    </div>
+    <label>Project folder <input id="project" value="./scratch" /></label>
+    <label>Goal <textarea id="goal" rows="2" placeholder="What should the engine accomplish?"></textarea></label>
+    <div class="row">
+      <label><input type="checkbox" id="research" /> <span id="research-label">research (unavailable)</span></label>
+      <button id="start">Start</button>
+      <button id="kill" disabled>Kill</button>
+    </div>
+  </section>
+
+  <main>
+    <section id="plan-panel">
+      <h2>Plan <span id="plan-count"></span></h2>
+      <ol id="plan"></ol>
+    </section>
+    <section id="log-panel">
+      <h2>Activity</h2>
+      <div id="log"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #e6e6e6; background: #16181d; }
+header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #1f2430; }
+h1 { font-size: 16px; margin: 0; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #8a93a6; margin: 0 0 8px; }
+.status { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+.status.idle { background: #333; }
+.status.running { background: #1d6f42; }
+.status.done { background: #2a4d8f; }
+.status.aborted, .status.error { background: #8f2a2a; }
+#config { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; background: #1b1f28; }
+#config .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #aab2c0; }
+#config .row label { flex-direction: row; align-items: center; gap: 6px; }
+input, textarea, select { background: #0f1116; color: #e6e6e6; border: 1px solid #333a47; border-radius: 4px; padding: 6px; font: inherit; }
+button { background: #2a4d8f; color: #fff; border: 0; border-radius: 4px; padding: 8px 16px; cursor: pointer; }
+button:disabled { background: #333a47; color: #777; cursor: default; }
+#kill:not(:disabled) { background: #8f2a2a; }
+main { display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px 16px; }
+#plan { list-style: none; padding: 0; margin: 0; }
+#plan li { padding: 6px 8px; border-left: 3px solid #333a47; margin-bottom: 4px; background: #1b1f28; }
+#plan li.in_progress { border-color: #c9a227; }
+#plan li.done { border-color: #1d6f42; opacity: .7; }
+.entry { padding: 6px 8px; margin-bottom: 4px; border-radius: 4px; background: #1b1f28; white-space: pre-wrap; word-break: break-word; }
+.entry .who { font-weight: 600; margin-right: 6px; }
+.entry.dominant .who { color: #6fa8ff; }
+.entry.worker .who { color: #6fd3a8; }
+.entry.action { background: #232a1b; }
+.entry.result { background: #1b2228; }
+.entry.system { color: #c9a227; font-style: italic; }
+.entry.error { background: #2e1b1b; color: #ff9b9b; }
