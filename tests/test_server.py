@@ -7,6 +7,14 @@ from orchestrator.run_manager import RunManager
 _BODY = {"dominant": "d", "worker": "w", "project": "./scratch", "goal": "g"}
 
 
+def test_run_params_debug_defaults_false():
+    assert server.RunParams(**_BODY).debug is False
+
+
+def test_run_params_accepts_debug():
+    assert server.RunParams(**{**_BODY, "debug": True}).debug is True
+
+
 def test_api_models(monkeypatch):
     class FakeClient:
         def __init__(self, *a, **k):

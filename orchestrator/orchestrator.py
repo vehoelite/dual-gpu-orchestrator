@@ -129,6 +129,34 @@ RESEARCH_HINT = (
     "The result is a synthesized answer from external tools."
 )
 
+DEBUG_HINT = (
+    "\n\nDEBUG MODE: this subtask includes verifying your own work. After you "
+    "write code, RUN it with run_command in THIS subtask and read the output — "
+    "do not assume it works. If it errors, fix the file and run it again, "
+    "repeating until it succeeds; only then emit done. You are the only one who "
+    "can do this: a later step is a different worker with no memory of your "
+    "files, so verify here and now.\n"
+    "Run things NON-INTERACTIVELY — pass flags/args (e.g. --list), never a "
+    "command that waits for keyboard input, or it will hang until it is killed.\n"
+    "SAFETY: only run read-only or --dry-run invocations. Do NOT run commands "
+    "that modify the system, delete files, or kill processes — verifying that "
+    "the code runs and prints correctly is enough.\n"
+    "::action run_command\n"
+    "cmd: python port_manager.py --list\n"
+    "::end"
+)
+
+
+def worker_prompt_for(research: bool, debug: bool) -> str:
+    """Assemble the worker system prompt for a run, appending the optional
+    capability hints. Pure so it can be unit-tested without wiring a run."""
+    prompt = WORKER_PROMPT
+    if research:
+        prompt += RESEARCH_HINT
+    if debug:
+        prompt += DEBUG_HINT
+    return prompt
+
 
 @dataclass
 class RunResult:

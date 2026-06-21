@@ -21,7 +21,7 @@ from orchestrator.env import load_dotenv
 from orchestrator.events import make_event
 from orchestrator.llm_client import LMStudioClient
 from orchestrator.mcp_research import McpResearcher, mcp_integrations
-from orchestrator.orchestrator import RESEARCH_HINT, WORKER_PROMPT, Orchestrator
+from orchestrator.orchestrator import Orchestrator, worker_prompt_for
 from orchestrator.planner import GeminiPlanner, LocalPlanner
 from orchestrator.run_manager import RunManager
 from orchestrator.sandbox import Sandbox
@@ -40,6 +40,7 @@ class RunParams(BaseModel):
     project: str
     goal: str
     enable_research: bool = False
+    debug: bool = False
 
 
 def _build_planner(cfg: Config, client: LMStudioClient, dominant_model: str):
@@ -65,19 +66,19 @@ def build_run_factory(params: dict, cfg: Config):
         try:
             integrations = mcp_integrations(cfg.resolved_mcp_json())
             research_on = bool(params.get("enable_research")) and bool(token) and bool(integrations)
-            worker_prompt = WORKER_PROMPT
+            debug_on = bool(params.get("debug"))
             if research_on:
                 researcher = McpResearcher(
                     base_url=cfg.lmstudio_native_url, token=token,
                     model=cfg.research_model or params["worker"],
                     integrations=integrations, timeout=cfg.research_timeout,
                 )
-                worker_prompt = WORKER_PROMPT + RESEARCH_HINT
+            worker_prompt = worker_prompt_for(research=research_on, debug=debug_on)
 
             bus.emit(make_event(
                 "run_started", goal=params["goal"],
                 dominant=params["dominant"], worker=params["worker"],
-                research=research_on,
+                research=research_on, debug=debug_on,
             ))
 
             project = Path(params["project"])

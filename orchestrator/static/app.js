@@ -94,6 +94,7 @@ $("start").onclick = async () => {
     project: $("project").value,
     goal: $("goal").value,
     enable_research: $("research").checked,
+    debug: $("debug").checked,
   };
   const resp = await fetch("/api/run", {
     method: "POST",
