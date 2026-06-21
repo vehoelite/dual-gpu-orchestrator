@@ -21,8 +21,13 @@
     <label>Goal <textarea id="goal" rows="2" placeholder="What should the engine accomplish?"></textarea></label>
     <div class="row">
       <label><input type="checkbox" id="research" /> <span id="research-label">research (unavailable)</span></label>
+      <label title="Worker runs its code and fixes errors in-step (read-only / --dry-run only)"><input type="checkbox" id="debug" /> debug it (run &amp; fix)</label>
       <button id="start">Start</button>
       <button id="kill" disabled>Kill</button>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="premium-planner" /> <span id="premium-planner-label">premium planner (unavailable)</span></label>
+      <label>model <input id="planner-model" value="gemini-3.5-flash" /></label>
     </div>
   </section>
 

@@ -14,12 +14,12 @@ def _default_mcp_json() -> str:
 class Config:
     lm_studio_url: str = "http://localhost:1234/v1"
     mcp_json_path: str = ""
-    request_timeout: float = 120.0
+    request_timeout: float = 600.0  # slow dominant (e.g. 122B at ~2 t/s) needs a long per-request budget
     command_timeout: float = 60.0
     max_steps: int = 50
     # Phase 2: orchestration
     planner: str = "local"  # "local" | "gemini"
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-3.5-flash"
     planner_fallback_local: bool = True
     max_dominant_turns: int = 40
     no_progress_limit: int = 5

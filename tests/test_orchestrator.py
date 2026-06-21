@@ -1,5 +1,33 @@
 from orchestrator.agent import AgentResult
-from orchestrator.orchestrator import Orchestrator, RunResult
+from orchestrator.orchestrator import (
+    DEBUG_HINT,
+    RESEARCH_HINT,
+    WORKER_PROMPT,
+    Orchestrator,
+    RunResult,
+    worker_prompt_for,
+)
+
+
+def test_worker_prompt_base_only():
+    assert worker_prompt_for(research=False, debug=False) == WORKER_PROMPT
+
+
+def test_worker_prompt_appends_research():
+    assert worker_prompt_for(research=True, debug=False) == WORKER_PROMPT + RESEARCH_HINT
+
+
+def test_worker_prompt_appends_debug():
+    assert worker_prompt_for(research=False, debug=True) == WORKER_PROMPT + DEBUG_HINT
+    # The hint must actually direct the worker to run + fix in-step.
+    assert "run_command" in DEBUG_HINT
+
+
+def test_worker_prompt_composes_both():
+    assert (
+        worker_prompt_for(research=True, debug=True)
+        == WORKER_PROMPT + RESEARCH_HINT + DEBUG_HINT
+    )
 
 
 class StubPlanner:

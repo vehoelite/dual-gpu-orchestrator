@@ -193,3 +193,36 @@ async def test_agent_emits_parse_error(tmp_path):
     )
     await agent.run("t")
     assert any(e["type"] == "parse_error" for e in sink.events)
+
+
+async def test_resume_continues_from_prior_transcript(tmp_path):
+    # A worker "finished" with done; resume tells it to fix its work. It must
+    # continue from the SAME conversation (its prior attempt stays in context).
+    prior = [
+        {"role": "system", "content": "You are a worker."},
+        {"role": "user", "content": "create out.txt"},
+        {"role": "assistant", "content": "::action done\n::end"},
+    ]
+    scripted = [
+        "::action write_file\npath: out.txt\n---\nfixed\n::end",
+        "::action done\n::end",
+    ]
+    agent = _agent(tmp_path, scripted)
+    result = await agent.resume(prior, "::result error\nDo better\n::end")
+    assert result.stopped_reason == "done"
+    assert (tmp_path / "out.txt").read_text() == "fixed"
+    # First model call carries the prior history plus the appended followup turn.
+    first_call = agent.client.calls[0]
+    assert first_call[:3] == prior
+    assert {"role": "user", "content": "::result error\nDo better\n::end"} in first_call
+
+
+async def test_resume_does_not_mutate_caller_transcript(tmp_path):
+    prior = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "t"},
+        {"role": "assistant", "content": "::action done\n::end"},
+    ]
+    agent = _agent(tmp_path, ["::action done\n::end"])
+    await agent.resume(prior, "::result error\nredo\n::end")
+    assert len(prior) == 3  # caller's list untouched

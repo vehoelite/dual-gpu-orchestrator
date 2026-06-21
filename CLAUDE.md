@@ -49,26 +49,35 @@ by id substring in `cli.py` (e.g. `--dominant 122b --worker 27b`).
 - `protocol.py` — parse `::action` blocks / serialize `::result`. Pure, heavily tested.
 - `tools.py` + `sandbox.py` — first-party file/command tools; path containment to the project folder; `run_command` cwd = project folder.
 - `llm_client.py` — async `httpx` wrapper over LM Studio OpenAI-compat `/v1` (plain completions, **no `tools` param**). Sends `LMSTUDIO_TOKEN` as Bearer when set.
-- `agent.py` — the generic single-agent loop (emit → parse one action → execute → feed result). `terminal_verbs` is configurable (worker `{"done"}`, dominant `{"task_complete"}`). Loop is await-tolerant so registries can be sync or async.
+- `agent.py` — the generic single-agent loop (emit → parse one action → execute → feed result). `terminal_verbs` is configurable (worker `{"done"}`, dominant `{"task_complete"}`). Loop is await-tolerant so registries can be sync or async. `run(task)` starts fresh; `resume(prior_transcript, followup)` continues an existing conversation (used by `retry`).
 - `plan.py` — `Plan` / `Step` (pending|in_progress|done), `mark_done`/`revise`/`all_done`/`render`. Pure data.
-- `planner.py` — `LocalPlanner` (prompts the 9B) and `GeminiPlanner` (Google API; key from `GEMINI_API_KEY`).
-- `coordination.py` — `CoordinationRegistry`: the dominant's verbs (`set_plan`, `delegate`, `mark_done`, `revise_plan`, `task_complete`). `delegate` builds a **fresh** worker per subtask — the dominant must paste literal content (URLs, values, file contents) into each delegate body because workers share no memory.
+- `planner.py` — `LocalPlanner` (prompts the local dominant) and `GeminiPlanner` (Google API; key from `GEMINI_API_KEY`, default model `gemini-3.5-flash`). The dashboard "premium planner" checkbox selects Gemini per-run (the plan is the highest-leverage artifact, so it's worth a frontier model while execution stays local); `server.build_planner` picks local vs gemini from the run params and falls back to local if the key is missing.
+- `coordination.py` — `CoordinationRegistry`: the dominant's verbs (`set_plan`, `delegate`, `advance`, `retry`, `mark_done`, `revise_plan`, `task_complete`). `delegate`/`advance` build a **fresh** worker per NEW step — the dominant must paste literal content (URLs, values, file contents) into the body because a new worker shares no memory. `advance` = mark current done + delegate next in one turn (the eco happy path). `retry` re-runs the SAME step's worker via `Agent.resume` with its context intact (no re-paste; a one-line correction), so repeated failing retries trip the no-progress backstop. The in-progress step's live transcript is held in `_active_step`/`_active_transcript`, cleared when the step is marked done.
 - `mcp_research.py` — `McpResearcher` + `mcp_integrations()`. Phase 3: a `research` verb backed by LM Studio's **native** `POST /api/v1/chat` with `integrations` from `mcp.json` (runs MCP servers server-side).
 - `composite_registry.py` — routes `research` → `McpResearcher`, everything else → `ToolRegistry`.
-- `orchestrator.py` — owns a run: plan → seed `Plan` → dominant loop + backstops → `RunResult`. Holds the `DOMINANT_PROMPT` / `WORKER_PROMPT` / `RESEARCH_HINT` system prompts.
+- `orchestrator.py` — owns a run: plan → seed `Plan` → dominant loop + backstops → `RunResult`. Holds the `DOMINANT_PROMPT` / `WORKER_PROMPT` / `RESEARCH_HINT` / `DEBUG_HINT` system prompts and `worker_prompt_for(research, debug)` which composes the worker prompt. `DEBUG_HINT` (the dashboard "debug it" checkbox) makes the worker run + fix its own code IN-STEP (read-only/`--dry-run` only) — verification must be in the same subtask as creation, since a later step is a fresh worker with no memory of the files.
 - `env.py` — tiny dependency-free `.env` loader (real env vars always win).
 - `config.py` — `Config` dataclass (all defaults; backward-compatible across phases).
 - `cli.py` — headless entry point (see below).
 - `smoke.py` — live smoke helper.
+- `events.py` — Phase 4 event layer: `make_event`, `preview`, `plan_event`, `NullSink`, `EventBus` (buffered fan-out to WebSocket subscribers; `reset()` drains subscriber queues). The agent loop, coordination, and orchestrator emit events into an optional sink.
+- `run_manager.py` — `RunManager`: owns the single active run as an asyncio task wrapping a run-factory plus its `EventBus`. Hard-cancel kills the task and emits `run_aborted`; exceptions surface as an `error` event instead of crashing the server.
+- `server.py` — FastAPI dashboard. REST (`models`, `run`, `stop`) configures/starts/stops the one run via `RunManager`; `/ws` replays the buffered events then streams live ones. `build_run_factory` is a module attribute so tests can monkeypatch it. Serves `static/`.
+- `static/` — vanilla single-page dashboard (`index.html`, `app.js`, `style.css`): live log, plan view, kill switch. No build step.
 
 ## Running
 
 ```powershell
-# tests (101 passing)
+# tests (147 passing)
 .venv\Scripts\python.exe -m pytest -q
 
 # a headless run (LM Studio must be up with models loaded)
 .venv\Scripts\python.exe -m orchestrator.cli "<goal>" .\scratch --dominant 9b --worker 4b
+
+# the web dashboard (Phase 4) — then open http://127.0.0.1:8000
+# use the module entry, not bare `uvicorn …:app`: main() calls load_dotenv()
+# so LMSTUDIO_TOKEN reaches the /api/models + run endpoints.
+.venv\Scripts\python.exe -m orchestrator.server
 ```
 
 - `--dominant`/`--worker` are id substrings; without them, roles fall to LM Studio load order (arbitrary — pin them).
@@ -82,8 +91,9 @@ by id substring in `cli.py` (e.g. `--dominant 122b --worker 27b`).
 
 ## Status & phasing
 
-- **Phase 1** (single-agent text-protocol loop), **Phase 2** (planner + dominant/worker orchestration + `delegate` + backstops), **Phase 3** (MCP research) — all **implemented and merged**. 101 tests green.
-- **Phase 4 — web UI is NOT built.** The top-level design references `server.py` (FastAPI REST + `/ws` WebSocket) and `static/` (single-page dashboard + kill switch); neither exists yet, and `fastapi`/`uvicorn` are not yet dependencies (`pyproject.toml` lists only `httpx`). Today the only entry point is the headless `cli.py`. Backstops replace the kill switch for now: max-turns cap + no-progress detector + per-worker `max_steps`.
+- **Phase 1** (single-agent text-protocol loop), **Phase 2** (planner + dominant/worker orchestration + `delegate` + backstops), **Phase 3** (MCP research), **Phase 4** (web UI: event layer → `RunManager` → FastAPI `/ws` dashboard + kill switch) — all **implemented and merged**. 147 tests green.
+- `pyproject.toml` now depends on `httpx`, `fastapi`, and `uvicorn[standard]`. Two entry points: the headless `cli.py` and the `server.py` dashboard (`uvicorn orchestrator.server:app`).
+- Autonomy backstops still run underneath the UI: max-turns cap + no-progress detector + per-worker `max_steps`. The dashboard kill switch (`stop` → `RunManager.stop`) is now the live human touchpoint during a run.
 
 ## Docs
 
