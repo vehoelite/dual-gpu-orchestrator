@@ -10,8 +10,13 @@ import re
 from typing import Callable
 
 from orchestrator.plan import Plan, PlanError, parse_checklist
-from orchestrator.protocol import Action
+from orchestrator.protocol import Action, serialize_result
 from orchestrator.events import NullSink, make_event, plan_event, preview
+
+_RETRY_BANNER = (
+    "Reviewer rejected your previous attempt. Do NOT repeat it — take a "
+    "different approach."
+)
 
 
 def _last_assistant(transcript: list[dict]) -> str:
@@ -35,6 +40,11 @@ class CoordinationRegistry:
         self.no_progress_count = 0
         self.worker_results: list[dict] = []
         self.sink = sink or NullSink()
+        # The in-progress step's live worker conversation. Set by delegate /
+        # advance (fresh per new step); resumed by retry; cleared when the
+        # owning step is marked done.
+        self._active_step: int | None = None
+        self._active_transcript: list[dict] | None = None
 
     async def execute(self, action: Action) -> tuple[str, str]:
         before = self.plan.signature()
@@ -62,20 +72,32 @@ class CoordinationRegistry:
                 self.plan.mark_done(index)
             except PlanError as exc:
                 return "error", str(exc)
+            self._clear_active(index)
             return "ok", self.plan.render()
         if action.verb == "delegate":
             return await self._delegate(action)
+        if action.verb == "advance":
+            return await self._advance(action)
+        if action.verb == "retry":
+            return await self._retry(action)
         return "error", f"unknown verb: {action.verb}"
 
     def _parse_step(self, action: Action) -> int:
-        raw = action.args.get("step")
+        return self._parse_index(action.args.get("step"), "step")
+
+    def _parse_index(self, raw, label: str) -> int:
         if raw is None:
-            raise PlanError("missing 'step' arg")
+            raise PlanError(f"missing '{label}' arg")
         # Tolerate sloppy refs like "8 (final)" or "step 2" — take the first int.
         match = re.search(r"\d+", str(raw))
         if match is None:
-            raise PlanError(f"step must contain an integer, got {raw!r}")
+            raise PlanError(f"{label} must contain an integer, got {raw!r}")
         return int(match.group())
+
+    def _clear_active(self, index: int) -> None:
+        if self._active_step == index:
+            self._active_step = None
+            self._active_transcript = None
 
     async def _delegate(self, action: Action) -> tuple[str, str]:
         # Validate everything BEFORE mutating the plan, so a failed delegate
@@ -91,6 +113,52 @@ class CoordinationRegistry:
             self.plan.mark_in_progress(index)
         except PlanError as exc:
             return "error", str(exc)
+        return await self._run_fresh(index, subtask)
+
+    async def _advance(self, action: Action) -> tuple[str, str]:
+        # Mark the current step done AND delegate the next, one turn. Validate
+        # EVERYTHING before any mutation so a bad block leaves the plan untouched.
+        try:
+            done_index = self._parse_index(action.args.get("done"), "done")
+            next_index = self._parse_index(action.args.get("step"), "step")
+        except PlanError as exc:
+            return "error", str(exc)
+        subtask = action.body.strip()
+        if not subtask:
+            return "error", "advance needs the next step's instructions in the body"
+        try:
+            self.plan._check(done_index)
+            self.plan._check(next_index)
+        except PlanError as exc:
+            return "error", str(exc)
+        self.plan.mark_done(done_index)
+        self._clear_active(done_index)
+        self.plan.mark_in_progress(next_index)
+        return await self._run_fresh(next_index, subtask)
+
+    async def _retry(self, action: Action) -> tuple[str, str]:
+        # Re-run the SAME step's worker with its context intact (it remembers its
+        # failed attempt and the original task). Step stays in_progress.
+        try:
+            index = self._parse_step(action)
+        except PlanError as exc:
+            return "error", str(exc)
+        if self._active_step != index or self._active_transcript is None:
+            return "error", f"no active worker for step {index} to retry"
+        note = action.body.strip()
+        followup = serialize_result("error", f"{_RETRY_BANNER}\n{note}".rstrip())
+        self.sink.emit(make_event(
+            "worker_started", step=index, subtask=preview(note), retry=True
+        ))
+        worker = self.worker_factory()
+        result = await worker.resume(self._active_transcript, followup)
+        self.sink.emit(make_event(
+            "worker_finished", step=index,
+            stopped_reason=result.stopped_reason, retry=True,
+        ))
+        return self._record(index, note, result)
+
+    async def _run_fresh(self, index: int, subtask: str) -> tuple[str, str]:
         self.sink.emit(make_event(
             "worker_started", step=index, subtask=preview(subtask)
         ))
@@ -99,6 +167,12 @@ class CoordinationRegistry:
         self.sink.emit(make_event(
             "worker_finished", step=index, stopped_reason=result.stopped_reason
         ))
+        return self._record(index, subtask, result)
+
+    def _record(self, index: int, subtask: str, result) -> tuple[str, str]:
+        # Remember the live transcript so a retry of this step can resume it.
+        self._active_step = index
+        self._active_transcript = result.transcript
         report = _last_assistant(result.transcript)
         self.worker_results.append(
             {

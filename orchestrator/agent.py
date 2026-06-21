@@ -56,6 +56,18 @@ class Agent:
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": task},
         ]
+        return await self._loop(messages)
+
+    async def resume(self, prior_transcript: list[dict], followup: str) -> AgentResult:
+        """Continue a prior worker conversation with one appended user turn.
+
+        Used for a ``retry`` of the SAME step: the worker keeps its failed
+        attempt in context, so the dominant restates nothing — ``followup`` is
+        just the rejection/correction note. The caller's list is not mutated."""
+        messages = list(prior_transcript) + [{"role": "user", "content": followup}]
+        return await self._loop(messages)
+
+    async def _loop(self, messages: list[dict]) -> AgentResult:
         reason = "max_steps"
         for _ in range(self.max_steps):
             reply = await self.client.complete(model=self.model, messages=messages)
