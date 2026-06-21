@@ -41,7 +41,7 @@ function running(isRunning) {
 }
 
 const handlers = {
-  run_started: (e) => { running(true); setStatus("running", "running"); addEntry("system", "", `▶ run started: ${e.goal}`); },
+  run_started: (e) => { running(true); setStatus("running", "running"); addEntry("system", "", `▶ run started [planner: ${e.planner || "local"}${e.debug ? ", debug" : ""}]: ${e.goal}`); },
   plan: (e) => renderPlan(e),
   message: (e) => addEntry(e.agent, e.agent + ":", e.text),
   action: (e) => addEntry("action " + e.agent, e.agent + " ⇒ " + e.verb, JSON.stringify(e.args) + (e.body_preview ? "\n" + e.body_preview : "")),
@@ -83,6 +83,10 @@ async function loadModels() {
   cb.disabled = !data.research_available;
   cb.checked = data.research_available;
   $("research-label").textContent = data.research_available ? "research (available)" : "research (unavailable)";
+
+  const pp = $("premium-planner");
+  pp.disabled = !data.premium_planner_available;
+  $("premium-planner-label").textContent = data.premium_planner_available ? "premium planner (Gemini)" : "premium planner (unavailable)";
 }
 
 $("start").onclick = async () => {
@@ -95,6 +99,8 @@ $("start").onclick = async () => {
     goal: $("goal").value,
     enable_research: $("research").checked,
     debug: $("debug").checked,
+    planner: $("premium-planner").checked ? "gemini" : "local",
+    planner_model: $("planner-model").value,
   };
   const resp = await fetch("/api/run", {
     method: "POST",

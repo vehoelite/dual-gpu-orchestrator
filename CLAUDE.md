@@ -51,7 +51,7 @@ by id substring in `cli.py` (e.g. `--dominant 122b --worker 27b`).
 - `llm_client.py` — async `httpx` wrapper over LM Studio OpenAI-compat `/v1` (plain completions, **no `tools` param**). Sends `LMSTUDIO_TOKEN` as Bearer when set.
 - `agent.py` — the generic single-agent loop (emit → parse one action → execute → feed result). `terminal_verbs` is configurable (worker `{"done"}`, dominant `{"task_complete"}`). Loop is await-tolerant so registries can be sync or async. `run(task)` starts fresh; `resume(prior_transcript, followup)` continues an existing conversation (used by `retry`).
 - `plan.py` — `Plan` / `Step` (pending|in_progress|done), `mark_done`/`revise`/`all_done`/`render`. Pure data.
-- `planner.py` — `LocalPlanner` (prompts the 9B) and `GeminiPlanner` (Google API; key from `GEMINI_API_KEY`).
+- `planner.py` — `LocalPlanner` (prompts the local dominant) and `GeminiPlanner` (Google API; key from `GEMINI_API_KEY`, default model `gemini-3.5-flash`). The dashboard "premium planner" checkbox selects Gemini per-run (the plan is the highest-leverage artifact, so it's worth a frontier model while execution stays local); `server.build_planner` picks local vs gemini from the run params and falls back to local if the key is missing.
 - `coordination.py` — `CoordinationRegistry`: the dominant's verbs (`set_plan`, `delegate`, `advance`, `retry`, `mark_done`, `revise_plan`, `task_complete`). `delegate`/`advance` build a **fresh** worker per NEW step — the dominant must paste literal content (URLs, values, file contents) into the body because a new worker shares no memory. `advance` = mark current done + delegate next in one turn (the eco happy path). `retry` re-runs the SAME step's worker via `Agent.resume` with its context intact (no re-paste; a one-line correction), so repeated failing retries trip the no-progress backstop. The in-progress step's live transcript is held in `_active_step`/`_active_transcript`, cleared when the step is marked done.
 - `mcp_research.py` — `McpResearcher` + `mcp_integrations()`. Phase 3: a `research` verb backed by LM Studio's **native** `POST /api/v1/chat` with `integrations` from `mcp.json` (runs MCP servers server-side).
 - `composite_registry.py` — routes `research` → `McpResearcher`, everything else → `ToolRegistry`.
@@ -68,7 +68,7 @@ by id substring in `cli.py` (e.g. `--dominant 122b --worker 27b`).
 ## Running
 
 ```powershell
-# tests (141 passing)
+# tests (147 passing)
 .venv\Scripts\python.exe -m pytest -q
 
 # a headless run (LM Studio must be up with models loaded)
@@ -91,7 +91,7 @@ by id substring in `cli.py` (e.g. `--dominant 122b --worker 27b`).
 
 ## Status & phasing
 
-- **Phase 1** (single-agent text-protocol loop), **Phase 2** (planner + dominant/worker orchestration + `delegate` + backstops), **Phase 3** (MCP research), **Phase 4** (web UI: event layer → `RunManager` → FastAPI `/ws` dashboard + kill switch) — all **implemented and merged**. 141 tests green.
+- **Phase 1** (single-agent text-protocol loop), **Phase 2** (planner + dominant/worker orchestration + `delegate` + backstops), **Phase 3** (MCP research), **Phase 4** (web UI: event layer → `RunManager` → FastAPI `/ws` dashboard + kill switch) — all **implemented and merged**. 147 tests green.
 - `pyproject.toml` now depends on `httpx`, `fastapi`, and `uvicorn[standard]`. Two entry points: the headless `cli.py` and the `server.py` dashboard (`uvicorn orchestrator.server:app`).
 - Autonomy backstops still run underneath the UI: max-turns cap + no-progress detector + per-worker `max_steps`. The dashboard kill switch (`stop` → `RunManager.stop`) is now the live human touchpoint during a run.
 

@@ -41,16 +41,22 @@ class RunParams(BaseModel):
     goal: str
     enable_research: bool = False
     debug: bool = False
+    planner: str = "local"  # "local" | "gemini"
+    planner_model: str = ""  # overrides cfg.gemini_model when set
 
 
-def _build_planner(cfg: Config, client: LMStudioClient, dominant_model: str):
-    if cfg.planner == "gemini":
+def build_planner(cfg: Config, client, params: dict):
+    """Select the planner for a run. ``params['planner'] == 'gemini'`` uses the
+    frontier model (key from GEMINI_API_KEY); anything else, or a missing key
+    with fallback enabled, uses the local dominant. Pure enough to unit-test."""
+    if params.get("planner") == "gemini":
         key = os.environ.get("GEMINI_API_KEY", "")
         if key:
-            return GeminiPlanner(api_key=key, model=cfg.gemini_model)
+            model = params.get("planner_model") or cfg.gemini_model
+            return GeminiPlanner(api_key=key, model=model)
         if not cfg.planner_fallback_local:
             raise RuntimeError("GEMINI_API_KEY not set and fallback disabled")
-    return LocalPlanner(client=client, model=dominant_model)
+    return LocalPlanner(client=client, model=params["dominant"])
 
 
 def build_run_factory(params: dict, cfg: Config):
@@ -63,6 +69,7 @@ def build_run_factory(params: dict, cfg: Config):
             base_url=cfg.lm_studio_url, timeout=cfg.request_timeout, token=token
         )
         researcher = None
+        planner = None
         try:
             integrations = mcp_integrations(cfg.resolved_mcp_json())
             research_on = bool(params.get("enable_research")) and bool(token) and bool(integrations)
@@ -74,11 +81,13 @@ def build_run_factory(params: dict, cfg: Config):
                     integrations=integrations, timeout=cfg.research_timeout,
                 )
             worker_prompt = worker_prompt_for(research=research_on, debug=debug_on)
+            planner = build_planner(cfg, client, params)
+            planner_kind = "gemini" if isinstance(planner, GeminiPlanner) else "local"
 
             bus.emit(make_event(
                 "run_started", goal=params["goal"],
                 dominant=params["dominant"], worker=params["worker"],
-                research=research_on, debug=debug_on,
+                research=research_on, debug=debug_on, planner=planner_kind,
             ))
 
             project = Path(params["project"])
@@ -97,7 +106,6 @@ def build_run_factory(params: dict, cfg: Config):
                     sink=bus, agent_label="worker",
                 )
 
-            planner = _build_planner(cfg, client, params["dominant"])
             orch = Orchestrator(
                 planner=planner, worker_factory=worker_factory,
                 dominant_client=client, dominant_model=params["dominant"],
@@ -110,6 +118,8 @@ def build_run_factory(params: dict, cfg: Config):
             await client.aclose()
             if researcher is not None:
                 await researcher.aclose()
+            if planner is not None and hasattr(planner, "aclose"):
+                await planner.aclose()
 
     return _run
 
@@ -125,7 +135,12 @@ async def api_models():
     finally:
         await client.aclose()
     research_available = bool(token) and bool(mcp_integrations(cfg.resolved_mcp_json()))
-    return {"models": models, "research_available": research_available}
+    premium_planner_available = bool(os.environ.get("GEMINI_API_KEY", ""))
+    return {
+        "models": models,
+        "research_available": research_available,
+        "premium_planner_available": premium_planner_available,
+    }
 
 
 @app.post("/api/run")

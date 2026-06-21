@@ -19,7 +19,7 @@ class Config:
     max_steps: int = 50
     # Phase 2: orchestration
     planner: str = "local"  # "local" | "gemini"
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-3.5-flash"
     planner_fallback_local: bool = True
     max_dominant_turns: int = 40
     no_progress_limit: int = 5
